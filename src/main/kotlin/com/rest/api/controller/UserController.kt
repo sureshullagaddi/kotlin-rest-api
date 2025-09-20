@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/users")
-class Controller(private val userService: UserService) {
+class UserController(private val userService: UserService) {
 
     @GetMapping
     fun getAllUsers(): List<User> = userService.getAllUsers()
