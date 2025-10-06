@@ -17,3 +17,14 @@ jobs:
       - run: chmod +x ./gradlew
       - run: ./gradlew build
       - run: ./gradlew test
+      
+  auto-approve-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+      - uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          merge-method: squash
