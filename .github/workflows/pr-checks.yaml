@@ -1,8 +1,12 @@
 name: Kotlin PR Checks
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [ main ]
+
+permissions:
+  pull-requests: write
+  contents: write
 
 jobs:
   build:
@@ -17,8 +21,9 @@ jobs:
       - run: chmod +x ./gradlew
       - run: ./gradlew build
       - run: ./gradlew test
-      
+
   auto-approve-and-merge:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: hmarr/auto-approve-action@v4
