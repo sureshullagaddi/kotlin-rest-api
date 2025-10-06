@@ -26,9 +26,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # Use a dedicated bot's PAT instead of GITHUB_TOKEN to allow approval
       - uses: hmarr/auto-approve-action@v4
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          github-token: "${{ secrets.BOT_PAT }}"
       - uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: "${{ secrets.GITHUB_TOKEN }}"
