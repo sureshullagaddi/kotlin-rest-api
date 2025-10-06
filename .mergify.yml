@@ -1,0 +1,13 @@
+pull_request_rules:
+  - name: Automatic merge for passing PRs
+    conditions:
+      - "base=main"
+      - "author!=bot"
+      - "check-success=build"
+      - "check-success=test"
+      - "#approved-reviews-by>=1"
+    actions:
+      merge:
+        method: squash
+      approve:
+        message: "Auto-approved by Mergify since all checks passed."
