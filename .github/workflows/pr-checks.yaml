@@ -1,8 +1,6 @@
 name: Kotlin PR Checks
 
 on:
-  pull_request:
-    branches: [ main ]
   pull_request_target:
     branches: [ main ]
 
@@ -25,7 +23,7 @@ jobs:
       - run: ./gradlew test
 
   auto-approve-and-merge:
-    if: github.event_name == 'pull_request_target'
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: hmarr/auto-approve-action@v4
