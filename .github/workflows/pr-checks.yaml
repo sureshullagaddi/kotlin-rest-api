@@ -1,4 +1,4 @@
-name: Kotlin PR Checks
+name: Kotlin Build
 
 on:
   pull_request_target:
