@@ -8,7 +8,7 @@ on:
 
 jobs:
   auto-approve:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.actor == 'dependabot[bot]' }}
+    if: ${{ github.actor == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
