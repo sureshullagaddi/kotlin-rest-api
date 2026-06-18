@@ -1,0 +1,52 @@
+# Development Environment Overrides
+# Used for testing and integration scenarios
+
+replicaCount: 1  # Single replica for dev
+
+image:
+  tag: "dev-latest"
+  pullPolicy: Always
+
+autoscaling:
+  enabled: false  # No auto-scaling in dev
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 250m
+    memory: 512Mi
+
+config:
+  logLevel: DEBUG
+  apiLogLevel: DEBUG
+
+database:
+  host: postgres-dev.fusion-namespace.svc.cluster.local
+  port: 5432
+  name: fusion_api_dev
+
+ingress:
+  enabled: true
+  hosts:
+    - host: api-dev.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+livenessProbe:
+  initialDelaySeconds: 30
+  periodSeconds: 15
+
+readinessProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 10
+
+podDisruptionBudget:
+  enabled: false
+
+nodeSelector: {}
+
+affinity: {}
+

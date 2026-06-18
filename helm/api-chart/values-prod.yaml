@@ -1,0 +1,123 @@
+# Production Environment Overrides
+# Stricter resource limits, high availability, auto-scaling
+
+replicaCount: 3  # Minimum 3 replicas for HA
+
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/fusion-api/kotlin-rest-api
+  tag: "v1.0.0"  # Use semantic versioning in prod
+  pullPolicy: IfNotPresent
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 75
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+config:
+  logLevel: WARN
+  apiLogLevel: INFO
+
+database:
+  host: fusion-api-db.xyz123.us-east-1.rds.amazonaws.com
+  port: 5432
+  name: fusion_api
+  # Use AWS Secrets Manager for production credentials
+  secretName: fusion-db-credentials-prod
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:123456789012:certificate/PROD_CERT_ID
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    alb.ingress.kubernetes.io/load-balancer-name: fusion-api-prod
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/waf-acl-arn: arn:aws:wafv2:us-east-1:123456789012:regional/webacl/fusion-api-prod/PROD_WAF_ID
+  hosts:
+    - host: api.fusion-hackathon.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fusion-api-prod-tls
+      hosts:
+        - api.fusion-hackathon.dev
+
+livenessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 30
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app
+              operator: In
+              values:
+                - fusion-api
+        topologyKey: kubernetes.io/hostname
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: workload-type
+              operator: In
+              values:
+                - production
+
+# Node selection for production workloads
+nodeSelector:
+  workload-type: production
+
+# AWS-specific settings for prod
+# These would be passed as environment variables
+env:
+  AWS_REGION: eu-north-1
+  AWS_DEFAULT_REGION: eu-north-1
+  CLOUDWATCH_LOG_GROUP: /aws/eks/product-service-prod
+  JAVA_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=100 -Xms1g -Xmx2g -XX:+ParallelRefProcEnabled"
+
+# Cloud Watch logging configuration
+cloudwatch:
+  logGroup: /aws/eks/product-service-prod
+  logStream: prod-cluster
+  retentionDays: 30
+
+# Enable all monitoring features in prod
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 10s
+
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+

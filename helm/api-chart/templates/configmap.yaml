@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "api-chart.fullname" . }}
+  labels:
+    {{- include "api-chart.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+data:
+  {{- if .Values.configMap }}
+  {{- range $key, $value := .Values.configMap }}
+  {{ $key }}: |
+{{ $value | indent 4 }}
+  {{- end }}
+  {{- end }}
+  # Additional configuration files
+  application-k8s.yml: |
+    spring:
+      application:
+        name: fusion-api
+      datasource:
+        hikari:
+          maximum-pool-size: 20
+          minimum-idle: 5
+          connection-timeout: 30000
+          idle-timeout: 600000
+          max-lifetime: 1800000
+      jpa:
+        hibernate:
+          ddl-auto: validate
+        properties:
+          hibernate:
+            jdbc:
+              batch_size: 20
+              fetch_size: 100
+    management:
+      server:
+        port: {{ .Values.config.managementPort }}
+      endpoints:
+        web:
+          exposure:
+            include: health,readiness,liveness,metrics,prometheus
+      metrics:
+        export:
+          cloudwatch:
+            enabled: true
+            namespace: FusionAPI
+            batch-size: 20
+

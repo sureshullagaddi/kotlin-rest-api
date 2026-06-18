@@ -1,0 +1,109 @@
+---
+# ServiceAccount for the application
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fusion-api
+  namespace: fusion-namespace
+  labels:
+    app: fusion-api
+  annotations:
+    description: "Service account for Fusion API application"
+
+---
+# Role for pod-level permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fusion-api-role
+  namespace: fusion-namespace
+spec:
+  rules:
+    # Allow reading ConfigMaps (application configuration)
+    - apiGroups: [""]
+      resources: ["configmaps"]
+      verbs: ["get", "list", "watch"]
+      resourceNames: ["fusion-api"]  # Restrict to specific ConfigMap
+    
+    # Allow reading Secrets (database credentials)
+    - apiGroups: [""]
+      resources: ["secrets"]
+      verbs: ["get"]
+      resourceNames: ["fusion-db-credentials"]  # Restrict to specific Secret
+
+---
+# RoleBinding to attach Role to ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fusion-api-rolebinding
+  namespace: fusion-namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fusion-api-role
+subjects:
+  - kind: ServiceAccount
+    name: fusion-api
+    namespace: fusion-namespace
+
+---
+# ClusterRole for cluster-level permissions (if needed)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fusion-api-cluster-role
+  labels:
+    app: fusion-api
+spec:
+  rules:
+    # Allow reading namespaces (for IRSA webhook)
+    - apiGroups: [""]
+      resources: ["namespaces"]
+      verbs: ["get"]
+    
+    # Allow reading nodes (for pod placement info)
+    - apiGroups: [""]
+      resources: ["nodes"]
+      verbs: ["get"]
+
+---
+# ClusterRoleBinding for cluster-level permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fusion-api-cluster-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fusion-api-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: fusion-api
+    namespace: fusion-namespace
+
+---
+# NetworkPolicy - allow access to service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-fusion-api-access
+  namespace: fusion-namespace
+spec:
+  podSelector:
+    matchLabels:
+      app: fusion-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from kube-apiserver (for probes and metrics)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+

@@ -1,0 +1,27 @@
+apiVersion: v2
+name: api-chart
+description: Helm chart for Fusion API microservice
+type: application
+version: 1.0.0
+appVersion: "0.0.1"
+
+maintainers:
+  - name: Fusion Team
+    email: team@fusion-hackathon.dev
+
+dependencies: []
+
+keywords:
+  - kotlin
+  - spring-boot
+  - rest-api
+  - postgresql
+  - kubernetes
+
+home: https://github.com/fusion-hackathon-2025/new
+sources:
+  - https://github.com/fusion-hackathon-2025/new
+
+annotations:
+  category: API Services
+
