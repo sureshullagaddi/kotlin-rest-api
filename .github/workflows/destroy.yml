@@ -1,0 +1,196 @@
+name: Destroy Infrastructure & Resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select environment to destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      confirm_destruction:
+        description: 'Type "DESTROY" to confirm'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: 397979615352
+  AWS_REGION: eu-north-1
+  TERRAFORM_BUCKET: tf-state-397979615352
+
+jobs:
+  confirmation:
+    name: Confirm Destruction
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Confirmation
+        run: |
+          if [[ "${{ github.event.inputs.confirm_destruction }}" != "DESTROY" ]]; then
+            echo "❌ Destruction cancelled: Confirmation text does not match"
+            exit 1
+          fi
+          echo "✅ Destruction confirmed for ${{ github.event.inputs.environment }} environment"
+
+  helm-uninstall:
+    name: Uninstall Helm Release
+    needs: confirmation
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name product-service-eks-${{ github.event.inputs.environment }} || true
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+
+      - name: Uninstall Helm Release
+        run: |
+          helm uninstall product-service \
+            --namespace product-service || true
+
+      - name: Delete Namespace
+        run: |
+          kubectl delete namespace product-service --ignore-not-found || true
+
+  terraform-destroy:
+    name: Destroy Terraform Resources
+    needs: [confirmation, helm-uninstall]
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: |
+          cd terraform/${{ github.event.inputs.environment }}
+          terraform init \
+            -backend-config=bucket=${{ env.TERRAFORM_BUCKET }} \
+            -backend-config=key=product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
+            -backend-config=region=${{ env.AWS_REGION }} \
+            -backend-config=encrypt=true
+
+      - name: Terraform Plan Destroy
+        id: plan
+        run: |
+          cd terraform/${{ github.event.inputs.environment }}
+          terraform plan -destroy \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="organization=sureshullagaddi" \
+            -var="environment=${{ github.event.inputs.environment }}" \
+            -out=destroyplan
+
+      - name: Terraform Destroy
+        run: |
+          cd terraform/${{ github.event.inputs.environment }}
+          terraform apply -auto-approve destroyplan
+
+  cleanup-logs:
+    name: Cleanup CloudWatch Logs
+    needs: [confirmation, terraform-destroy]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete CloudWatch Log Group
+        run: |
+          aws logs delete-log-group \
+            --log-group-name "/aws/eks/product-service-${{ github.event.inputs.environment }}" \
+            --region ${{ env.AWS_REGION }} || true
+          
+          echo "CloudWatch logs cleanup completed"
+
+  cleanup-ecr:
+    name: Cleanup ECR Images
+    needs: [confirmation]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete ECR Repository Images
+        run: |
+          REGISTRY="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          REPO="product-service/kotlin-rest-api"
+          
+          # Get all image digests
+          IMAGES=$(aws ecr list-images --repository-name $REPO --region ${{ env.AWS_REGION }} \
+            --query 'imageIds[*].[imageTag,imageDigest]' --output text)
+          
+          if [ -z "$IMAGES" ]; then
+            echo "No images found in repository"
+          else
+            echo "Deleting images..."
+            aws ecr batch-delete-image \
+              --repository-name $REPO \
+              --region ${{ env.AWS_REGION }} \
+              --image-ids "$IMAGES" || true
+          fi
+
+  notify:
+    name: Notify Destruction Status
+    needs: [confirmation, helm-uninstall, terraform-destroy, cleanup-logs, cleanup-ecr]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Destruction Summary
+        run: |
+          echo "## Infrastructure Destruction Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cleanup Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Helm Release: ${{ needs.helm-uninstall.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Terraform Resources: ${{ needs.terraform-destroy.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudWatch Logs: ${{ needs.cleanup-logs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ECR Images: ${{ needs.cleanup-ecr.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.terraform-destroy.result }}" == "success" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All resources destroyed successfully**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Some resources may not have been destroyed. Please verify manually.**" >> $GITHUB_STEP_SUMMARY
+          fi
+
