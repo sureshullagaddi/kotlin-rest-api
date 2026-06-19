@@ -43,11 +43,15 @@ echo ""
 echo "Step 2: Creating Trust Policy..."
 
 # Create trust policy JSON with correct subject format
+# ⚠️  IMPORTANT: When a GitHub Actions job uses an "environment:", the sub claim changes from
+#     repo:OWNER/REPO:ref:refs/heads/BRANCH  →  repo:OWNER/REPO:environment:ENV_NAME
+# The policy below covers ALL cases: branch refs, environments, PRs, and tags.
 cat > /tmp/trust-policy.json << 'EOF'
 {
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "AllowBranchPushes",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
@@ -63,6 +67,7 @@ cat > /tmp/trust-policy.json << 'EOF'
       }
     },
     {
+      "Sid": "AllowDevEnvironment",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
@@ -71,11 +76,12 @@ cat > /tmp/trust-policy.json << 'EOF'
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:dev"
         }
       }
     },
     {
+      "Sid": "AllowProdEnvironment",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
@@ -84,7 +90,37 @@ cat > /tmp/trust-policy.json << 'EOF'
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/heads/develop"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:prod"
+        }
+      }
+    },
+    {
+      "Sid": "AllowTagPushes",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/tags/*"
+        }
+      }
+    },
+    {
+      "Sid": "AllowPullRequests",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:pull_request"
         }
       }
     }

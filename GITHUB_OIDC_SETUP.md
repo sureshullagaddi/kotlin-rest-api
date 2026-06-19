@@ -42,6 +42,10 @@ aws iam create-open-id-connect-provider \
 
 ### 2b. Create Trust Policy File
 
+> ⚠️ **Critical**: When a GitHub Actions job uses an `environment:` key, the OIDC `sub` claim
+> changes from `repo:OWNER/REPO:ref:refs/heads/BRANCH` to `repo:OWNER/REPO:environment:ENV_NAME`.
+> The trust policy **must** cover all claim formats your workflow uses.
+
 Save this as `trust-policy.json`:
 
 ```json
@@ -49,6 +53,7 @@ Save this as `trust-policy.json`:
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "AllowBranchPushes",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
@@ -64,6 +69,7 @@ Save this as `trust-policy.json`:
       }
     },
     {
+      "Sid": "AllowDevEnvironment",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
@@ -72,11 +78,12 @@ Save this as `trust-policy.json`:
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:dev"
         }
       }
     },
     {
+      "Sid": "AllowProdEnvironment",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
@@ -85,7 +92,21 @@ Save this as `trust-policy.json`:
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/heads/develop"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:prod"
+        }
+      }
+    },
+    {
+      "Sid": "AllowPullRequests",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::397979615352:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:pull_request"
         }
       }
     }
@@ -169,6 +190,24 @@ AWS credentials configured for arn:aws:iam::397979615352:role/github-actions-oid
 ---
 
 ## Troubleshooting
+
+### Root Cause: GitHub Environment vs Branch `sub` Claim Mismatch
+
+This is the **most common cause** of `Not authorized to perform sts:AssumeRoleWithWebIdentity`.
+
+GitHub's OIDC `sub` claim format depends on the **job context**:
+
+| Job Context | `sub` claim format |
+|---|---|
+| Branch push (no environment) | `repo:OWNER/REPO:ref:refs/heads/BRANCH` |
+| Job with `environment: dev` | `repo:OWNER/REPO:environment:dev` |
+| Job with `environment: prod` | `repo:OWNER/REPO:environment:prod` |
+| Pull request | `repo:OWNER/REPO:pull_request` |
+| Tag push | `repo:OWNER/REPO:ref:refs/tags/TAG` |
+
+If your workflow jobs use `environment:`, the trust policy **must** explicitly allow the `environment:dev`/`environment:prod` sub claims — `ref:refs/heads/*` wildcards will **not** match them.
+
+---
 
 ### If Still Getting "Not authorized to perform sts:AssumeRoleWithWebIdentity"
 
