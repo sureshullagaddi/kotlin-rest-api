@@ -8,7 +8,7 @@ set -e
 AWS_ACCOUNT_ID="397979615352"
 AWS_REGION="eu-north-1"
 GITHUB_ORG="sureshullagaddi"
-GITHUB_REPO="product-service"
+GITHUB_REPO="kotlin-rest-api"
 ROLE_NAME="github-actions-oidc-role"
 
 echo "=================================="
@@ -62,7 +62,7 @@ cat > /tmp/trust-policy.json << 'EOF'
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/heads/*"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:ref:refs/heads/*"
         }
       }
     },
@@ -76,7 +76,7 @@ cat > /tmp/trust-policy.json << 'EOF'
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:dev"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:environment:dev"
         }
       }
     },
@@ -90,7 +90,7 @@ cat > /tmp/trust-policy.json << 'EOF'
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:prod"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:environment:prod"
         }
       }
     },
@@ -106,7 +106,7 @@ cat > /tmp/trust-policy.json << 'EOF'
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/tags/*"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:ref:refs/tags/*"
         }
       }
     },
@@ -120,7 +120,7 @@ cat > /tmp/trust-policy.json << 'EOF'
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:pull_request"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:pull_request"
         }
       }
     }
@@ -177,4 +177,3 @@ echo ""
 
 # Cleanup
 rm -f /tmp/trust-policy.json
-

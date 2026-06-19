@@ -1,21 +1,23 @@
 # GitHub OIDC AWS Setup Guide
 
 ## Problem
-GitHub Actions cannot assume the OIDC role because the trust policy is not correctly configured.
+GitHub Actions cannot assume the OIDC role because the trust policy repo name (`product-service`) does not match the actual GitHub repository name (`kotlin-rest-api`).
+
+The OIDC `sub` claim is based on the **actual GitHub repository name** (from the git remote URL), not the local folder name. Since the git remote is `https://github.com/sureshullagaddi/kotlin-rest-api.git`, all `sub` claims will contain `kotlin-rest-api`.
 
 ## Solution
 
 ### Step 1: Run the Setup Script (RECOMMENDED)
 
 ```bash
-cd /Users/suresh/Documents/fusion-hackathon-2025/new
+cd /Users/suresh/Documents/kotlin-rest-api
 chmod +x setup-github-oidc.sh
 ./setup-github-oidc.sh
 ```
 
 **This script will:**
 - ✅ Create the OIDC provider (if not exists)
-- ✅ Create the IAM role with correct trust policy
+- ✅ Create the IAM role with correct trust policy using `kotlin-rest-api`
 - ✅ Attach the AdministratorAccess policy
 - ✅ Verify everything works
 
@@ -45,6 +47,9 @@ aws iam create-open-id-connect-provider \
 > ⚠️ **Critical**: When a GitHub Actions job uses an `environment:` key, the OIDC `sub` claim
 > changes from `repo:OWNER/REPO:ref:refs/heads/BRANCH` to `repo:OWNER/REPO:environment:ENV_NAME`.
 > The trust policy **must** cover all claim formats your workflow uses.
+>
+> ⚠️ **The repo name in the sub claim must match the GitHub repository name exactly** — it is
+> `kotlin-rest-api` (the git remote name), NOT the local folder name.
 
 Save this as `trust-policy.json`:
 
@@ -64,7 +69,7 @@ Save this as `trust-policy.json`:
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:ref:refs/heads/*"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:ref:refs/heads/*"
         }
       }
     },
@@ -78,7 +83,7 @@ Save this as `trust-policy.json`:
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:dev"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:environment:dev"
         }
       }
     },
@@ -92,7 +97,7 @@ Save this as `trust-policy.json`:
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:environment:prod"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:environment:prod"
         }
       }
     },
@@ -106,7 +111,7 @@ Save this as `trust-policy.json`:
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/product-service:pull_request"
+          "token.actions.githubusercontent.com:sub": "repo:sureshullagaddi/kotlin-rest-api:pull_request"
         }
       }
     }
@@ -163,8 +168,6 @@ Check that `.github/workflows/deploy.yml` contains:
   with:
     role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
     aws-region: ${{ env.AWS_REGION }}
-    token-format: 'aws4'
-    duration-seconds: 900
 ```
 
 ✅ Already updated!
@@ -176,7 +179,7 @@ Check that `.github/workflows/deploy.yml` contains:
 1. Push changes to `develop` branch:
 ```bash
 git add .
-git commit -m "Configure GitHub OIDC"
+git commit -m "Fix GitHub OIDC trust policy repo name"
 git push origin develop
 ```
 
@@ -191,9 +194,18 @@ AWS credentials configured for arn:aws:iam::397979615352:role/github-actions-oid
 
 ## Troubleshooting
 
-### Root Cause: GitHub Environment vs Branch `sub` Claim Mismatch
+### Root Cause: Trust Policy Repo Name Must Match the GitHub Remote
 
-This is the **most common cause** of `Not authorized to perform sts:AssumeRoleWithWebIdentity`.
+The **#1 cause** of `Not authorized to perform sts:AssumeRoleWithWebIdentity` is a mismatch between the repo name in the trust policy `sub` condition and the actual GitHub repository name.
+
+The `sub` claim is built from the **git remote URL**, not the local folder name:
+- Local folder: `kotlin-rest-api` (irrelevant)
+- Git remote: `https://github.com/sureshullagaddi/kotlin-rest-api.git`
+- Actual `sub` claim: `repo:sureshullagaddi/kotlin-rest-api:ref:refs/heads/develop`
+
+If the trust policy says `product-service` but the repo is `kotlin-rest-api`, every attempt will fail.
+
+### Root Cause: GitHub Environment vs Branch `sub` Claim Mismatch
 
 GitHub's OIDC `sub` claim format depends on the **job context**:
 
@@ -225,7 +237,7 @@ aws iam get-role --role-name github-actions-oidc-role --query 'Role.AssumeRolePo
 
 Should contain:
 - `token.actions.githubusercontent.com` in Federated
-- `sureshullagaddi/product-service` in sub
+- `sureshullagaddi/kotlin-rest-api` in sub
 - `sts.amazonaws.com` in aud
 
 **Check 3: Verify Role Permissions**
@@ -235,18 +247,10 @@ aws iam list-attached-role-policies --role-name github-actions-oidc-role
 
 Should show `AdministratorAccess` attached
 
-**Check 4: Verify GitHub Repo Name**
-- Go to GitHub → Your repo → Settings → About
-- Confirm repo is **exactly**: `sureshullagaddi/product-service`
-- (Not `fusion-api`, not any other name)
-
-**Check 5: Clear GitHub Actions Cache**
+**Check 4: Verify GitHub Repo Name (matches git remote)**
 ```bash
-# In your local repo
-git rm --cached -r .
-git add .
-git commit -m "Clear caches"
-git push
+git remote get-url origin
+# Should print: https://github.com/sureshullagaddi/kotlin-rest-api.git
 ```
 
 ### If OIDC Provider Creation Fails
@@ -281,4 +285,3 @@ Once OIDC is working:
 5. ✅ Helm deploys application to EKS
 
 **Estimated time to get this working: 10-15 minutes** ⏱️
-
