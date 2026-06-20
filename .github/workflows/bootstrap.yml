@@ -1,0 +1,74 @@
+name: Bootstrap Terraform Backend
+
+# Run this workflow ONCE to create the S3 bucket and DynamoDB table
+# that all other Terraform environments depend on.
+# It is safe to re-run — Terraform will detect existing resources.
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: 'AWS region for backend resources'
+        required: true
+        default: 'eu-north-1'
+      terraform_bucket:
+        description: 'S3 bucket name for Terraform state'
+        required: true
+        default: 'tf-state-397979615352'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: 397979615352
+
+jobs:
+  bootstrap:
+    name: Bootstrap Remote Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init (local backend)
+        run: terraform init
+        working-directory: terraform/bootstrap
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var="aws_region=${{ github.event.inputs.aws_region }}" \
+            -var="terraform_bucket=${{ github.event.inputs.terraform_bucket }}" \
+            -out=bootstrap.tfplan
+        working-directory: terraform/bootstrap
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve bootstrap.tfplan
+        working-directory: terraform/bootstrap
+
+      - name: Summary
+        run: |
+          echo "### ✅ Bootstrap Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| S3 Bucket | \`${{ github.event.inputs.terraform_bucket }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| DynamoDB Table | \`terraform-locks\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Region | \`${{ github.event.inputs.aws_region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "You can now run the **Build & Deploy** workflow safely." >> $GITHUB_STEP_SUMMARY
+        working-directory: terraform/bootstrap
+

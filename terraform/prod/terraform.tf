@@ -8,13 +8,7 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket         = "tf-state-397979615352"
-    key            = "product-service/prod/terraform.tfstate"
-    region         = "eu-north-1"
-    encrypt        = true
-    dynamodb_table = "terraform-locks"
-  }
+  backend "s3" {}
 }
 
 provider "aws" {
