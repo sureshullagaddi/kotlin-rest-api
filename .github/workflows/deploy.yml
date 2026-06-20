@@ -158,12 +158,13 @@ jobs:
           terraform plan \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="environment=${{ needs.prepare.outputs.environment }}" \
+            -lock-timeout=5m \
             -out=tfplan
 
       - name: Terraform Apply
         run: |
           cd terraform/${{ needs.prepare.outputs.environment }}
-          terraform apply -auto-approve tfplan
+          terraform apply -lock-timeout=5m -auto-approve tfplan
 
   deploy:
     name: Deploy to Kubernetes (Helm)

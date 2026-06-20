@@ -1,0 +1,106 @@
+name: Force Unlock Terraform State
+
+# Use this ONLY when a workflow was cancelled/failed mid-execution and left
+# a stale lock in DynamoDB. The lock ID is shown in the error message:
+#
+#   Error: Error acquiring the state lock
+#   Lock Info:
+#     ID: <paste-this-id-here>
+#
+# ⚠️ Never force-unlock while another terraform operation is genuinely running.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment with the stale lock'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      lock_id:
+        description: 'Lock ID from the error message (e.g. 318b4983-7eae-9413-7e10-335040bedfb1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_ACCOUNT_ID: 397979615352
+  AWS_REGION: eu-north-1
+  TERRAFORM_BUCKET: tf-state-397979615352
+
+jobs:
+  force-unlock:
+    name: Force Unlock Terraform State
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Show Current Lock Info
+        run: |
+          echo "Checking DynamoDB for lock on: product-service/${{ github.event.inputs.environment }}/terraform.tfstate"
+          aws dynamodb get-item \
+            --table-name terraform-locks \
+            --key '{"LockID": {"S": "tf-state-397979615352/product-service/${{ github.event.inputs.environment }}/terraform.tfstate"}}' \
+            --region ${{ env.AWS_REGION }} \
+            --output json || echo "No lock item found in DynamoDB."
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: |
+          cd terraform/${{ github.event.inputs.environment }}
+          terraform init \
+            -backend-config=bucket=${{ env.TERRAFORM_BUCKET }} \
+            -backend-config=key=product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
+            -backend-config=region=${{ env.AWS_REGION }} \
+            -backend-config=encrypt=true \
+            -backend-config=dynamodb_table=terraform-locks
+
+      - name: Force Unlock
+        run: |
+          cd terraform/${{ github.event.inputs.environment }}
+          terraform force-unlock -force ${{ github.event.inputs.lock_id }}
+          echo "✅ Lock ${{ github.event.inputs.lock_id }} released."
+
+      - name: Verify Lock Released
+        run: |
+          RESULT=$(aws dynamodb get-item \
+            --table-name terraform-locks \
+            --key '{"LockID": {"S": "tf-state-397979615352/product-service/${{ github.event.inputs.environment }}/terraform.tfstate"}}' \
+            --region ${{ env.AWS_REGION }} \
+            --output json 2>/dev/null)
+          if [[ "$RESULT" == "{}" || -z "$RESULT" ]]; then
+            echo "✅ Confirmed: no lock present. You can now re-run the failed workflow."
+          else
+            echo "⚠️ Lock may still be present: $RESULT"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🔓 Force Unlock Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ github.event.inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lock ID released | \`${{ github.event.inputs.lock_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Released by | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "You can now re-run the **Build & Deploy** workflow." >> $GITHUB_STEP_SUMMARY
+

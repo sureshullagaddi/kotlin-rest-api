@@ -166,12 +166,13 @@ jobs:
           terraform plan -destroy \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="environment=${{ github.event.inputs.environment }}" \
+            -lock-timeout=5m \
             -out=destroyplan
 
       - name: Terraform Destroy
         run: |
           cd terraform/${{ github.event.inputs.environment }}
-          terraform apply -auto-approve destroyplan
+          terraform apply -lock-timeout=5m -auto-approve destroyplan
 
       - name: Delete RDS Final Snapshot (prod only)
         # Prod RDS creates a final snapshot on deletion — Terraform doesn't delete it
