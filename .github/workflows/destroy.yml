@@ -126,6 +126,30 @@ jobs:
         with:
           terraform_version: 1.5.0
 
+      - name: Disable RDS Deletion Protection (prod only)
+        # deletion_protection=true on prod RDS blocks terraform destroy — must be cleared first
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          DB_IDENTIFIER="fusion-api-db-${ENV}"
+
+          if aws rds describe-db-instances \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --region ${{ env.AWS_REGION }} &>/dev/null; then
+            echo "Disabling deletion protection on RDS: $DB_IDENTIFIER"
+            aws rds modify-db-instance \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --no-deletion-protection \
+              --apply-immediately \
+              --region ${{ env.AWS_REGION }}
+            echo "Waiting for RDS modification to complete..."
+            aws rds wait db-instance-available \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --region ${{ env.AWS_REGION }}
+            echo "Deletion protection disabled."
+          else
+            echo "RDS instance $DB_IDENTIFIER not found — skipping."
+          fi
+
       - name: Terraform Init
         run: |
           cd terraform/${{ github.event.inputs.environment }}
@@ -148,6 +172,44 @@ jobs:
         run: |
           cd terraform/${{ github.event.inputs.environment }}
           terraform apply -auto-approve destroyplan
+
+      - name: Delete RDS Final Snapshot (prod only)
+        # Prod RDS creates a final snapshot on deletion — Terraform doesn't delete it
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          SNAPSHOT_ID="fusion-api-db-${ENV}-final-snapshot"
+
+          if aws rds describe-db-snapshots \
+              --db-snapshot-identifier "$SNAPSHOT_ID" \
+              --region ${{ env.AWS_REGION }} &>/dev/null; then
+            echo "Deleting RDS final snapshot: $SNAPSHOT_ID"
+            aws rds delete-db-snapshot \
+              --db-snapshot-identifier "$SNAPSHOT_ID" \
+              --region ${{ env.AWS_REGION }}
+            echo "Final snapshot deleted."
+          else
+            echo "No final snapshot found ($SNAPSHOT_ID) — skipping."
+          fi
+
+      - name: Delete EKS Auto-created CloudWatch Log Groups
+        # EKS creates /aws/eks/<cluster>/cluster log group automatically — not in Terraform state
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          CLUSTER="fusion-api-eks-${ENV}"
+          EXTRA_LOG_GROUPS=(
+            "/aws/eks/${CLUSTER}/cluster"
+            "/aws/containerinsights/${CLUSTER}/application"
+            "/aws/containerinsights/${CLUSTER}/dataplane"
+            "/aws/containerinsights/${CLUSTER}/host"
+            "/aws/containerinsights/${CLUSTER}/performance"
+          )
+          for LG in "${EXTRA_LOG_GROUPS[@]}"; do
+            aws logs delete-log-group \
+              --log-group-name "$LG" \
+              --region ${{ env.AWS_REGION }} 2>/dev/null && \
+              echo "Deleted log group: $LG" || \
+              echo "Log group not found: $LG — skipping."
+          done
 
       - name: Remove Terraform State File from S3
         run: |

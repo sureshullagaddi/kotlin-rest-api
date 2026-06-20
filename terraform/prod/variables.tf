@@ -72,7 +72,6 @@ variable "rds_username" {
 }
 
 variable "domain_name" {
-variable "domain_name" {
   description = "Domain name for API"
   type        = string
   default     = "api.productservice.com"

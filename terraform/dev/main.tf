@@ -17,8 +17,9 @@ resource "random_password" "db" {
 }
 
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name        = "product-service/${var.environment}/db-credentials"
-  description = "RDS credentials for product-service ${var.environment} — managed by Terraform"
+  name                    = "product-service/${var.environment}/db-credentials"
+  description             = "RDS credentials for product-service ${var.environment} — managed by Terraform"
+  recovery_window_in_days = 0 # Immediate deletion on terraform destroy (no 30-day recovery window)
 
   tags = {
     Environment = var.environment
