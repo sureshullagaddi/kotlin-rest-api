@@ -141,9 +141,7 @@ jobs:
           cd terraform/${{ github.event.inputs.environment }}
           terraform plan -destroy \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="organization=sureshullagaddi" \
             -var="environment=${{ github.event.inputs.environment }}" \
-            -var="image_tag=unused" \
             -out=destroyplan
 
       - name: Terraform Destroy

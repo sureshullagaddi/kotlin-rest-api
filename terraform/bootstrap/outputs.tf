@@ -8,3 +8,8 @@ output "dynamodb_table_name" {
   value       = aws_dynamodb_table.terraform_locks.name
 }
 
+output "next_steps" {
+  description = "Actions required after bootstrap"
+  value       = "Bootstrap complete. You can now run the Build & Deploy workflow. DB credentials will be auto-generated and stored in Secrets Manager by Terraform during the first deploy."
+}
+

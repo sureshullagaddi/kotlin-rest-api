@@ -1,3 +1,46 @@
+# ---------------------------------------------------------------------------
+# DB Credentials — fully managed by Terraform
+#
+# 1. random_password   → generates a strong password (never seen by humans)
+# 2. aws_secretsmanager_secret + version → stores username + password as JSON
+# 3. RDS module        → uses the values directly from the resources
+# 4. terraform destroy → removes all three automatically (clean teardown)
+# ---------------------------------------------------------------------------
+resource "random_password" "db" {
+  length           = 32
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}:?"  # excludes chars that break conn strings
+  min_upper        = 4
+  min_lower        = 4
+  min_numeric      = 4
+  min_special      = 4
+}
+
+resource "aws_secretsmanager_secret" "db_credentials" {
+  name        = "product-service/${var.environment}/db-credentials"
+  description = "RDS credentials for product-service ${var.environment} — managed by Terraform"
+
+  tags = {
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "db_credentials" {
+  secret_id = aws_secretsmanager_secret.db_credentials.id
+  secret_string = jsonencode({
+    username = var.rds_username
+    password = random_password.db.result
+    host     = module.rds.db_instance_endpoint
+    port     = 5432
+    dbname   = "fusion_api"
+  })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
 # VPC Module
 module "vpc" {
   source = "../modules/vpc"
@@ -61,7 +104,7 @@ module "rds" {
 
   database_name = "fusion_api"
   username      = var.rds_username
-  password      = var.rds_password
+  password      = random_password.db.result
 
   common_tags = local.common_tags
 }

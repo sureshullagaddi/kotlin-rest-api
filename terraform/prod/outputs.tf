@@ -45,3 +45,7 @@ output "configure_kubectl" {
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
 
+output "db_secret_id" {
+  description = "Secrets Manager secret ID containing DB credentials"
+  value       = aws_secretsmanager_secret.db_credentials.id
+}

@@ -157,9 +157,7 @@ jobs:
           cd terraform/${{ needs.prepare.outputs.environment }}
           terraform plan \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="organization=sureshullagaddi" \
             -var="environment=${{ needs.prepare.outputs.environment }}" \
-            -var="image_tag=${{ needs.prepare.outputs.image_tag }}" \
             -out=tfplan
 
       - name: Terraform Apply
@@ -201,9 +199,16 @@ jobs:
 
       - name: Create Database Secret
         run: |
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "product-service/${{ needs.prepare.outputs.environment }}/db-credentials" \
+            --region ${{ env.AWS_REGION }} \
+            --query SecretString --output text)
+          DB_USERNAME=$(echo "$SECRET" | jq -r .username)
+          DB_PASSWORD=$(echo "$SECRET" | jq -r .password)
+
           kubectl create secret generic product-db-credentials \
-            --from-literal=username=${{ secrets.DB_USERNAME }} \
-            --from-literal=password=${{ secrets.DB_PASSWORD }} \
+            --from-literal=username="$DB_USERNAME" \
+            --from-literal=password="$DB_PASSWORD" \
             -n product-service \
             --dry-run=client -o yaml | kubectl apply -f -
 

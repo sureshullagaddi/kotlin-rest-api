@@ -116,6 +116,7 @@ jobs:
           echo "| DynamoDB Table | \`terraform-locks\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Region | \`${{ github.event.inputs.aws_region }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "You can now run the **Build & Deploy** workflow safely." >> $GITHUB_STEP_SUMMARY
+          echo "You can now run the **Build & Deploy** workflow." >> $GITHUB_STEP_SUMMARY
+          echo "DB credentials will be **auto-generated** and stored in Secrets Manager by Terraform on first deploy — no manual steps required." >> $GITHUB_STEP_SUMMARY
         working-directory: terraform/bootstrap
 

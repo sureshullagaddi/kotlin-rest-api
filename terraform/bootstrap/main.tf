@@ -67,6 +67,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
+
 # ---------------------------------------------------------------------------
 # DynamoDB Table — Terraform state locking
 # ---------------------------------------------------------------------------
