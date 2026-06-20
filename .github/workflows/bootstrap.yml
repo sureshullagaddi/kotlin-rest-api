@@ -47,6 +47,53 @@ jobs:
         run: terraform init
         working-directory: terraform/bootstrap
 
+      - name: Import existing resources (if already created)
+        # The bootstrap uses a local/ephemeral backend — if a previous run partially
+        # succeeded, resources exist in AWS but not in local state. Import them so
+        # Terraform doesn't try to re-create them and fail.
+        run: |
+          BUCKET="${{ github.event.inputs.terraform_bucket }}"
+          REGION="${{ github.event.inputs.aws_region }}"
+
+          # Import S3 bucket if it already exists in AWS
+          if aws s3api head-bucket --bucket "$BUCKET" --region "$REGION" 2>/dev/null; then
+            echo "S3 bucket $BUCKET already exists — importing into Terraform state."
+            terraform import \
+              -var="aws_region=$REGION" \
+              -var="terraform_bucket=$BUCKET" \
+              aws_s3_bucket.terraform_state "$BUCKET" || true
+
+            # Import dependent S3 sub-resources
+            terraform import \
+              -var="aws_region=$REGION" \
+              -var="terraform_bucket=$BUCKET" \
+              aws_s3_bucket_versioning.terraform_state "$BUCKET" || true
+
+            terraform import \
+              -var="aws_region=$REGION" \
+              -var="terraform_bucket=$BUCKET" \
+              aws_s3_bucket_server_side_encryption_configuration.terraform_state "$BUCKET" || true
+
+            terraform import \
+              -var="aws_region=$REGION" \
+              -var="terraform_bucket=$BUCKET" \
+              aws_s3_bucket_public_access_block.terraform_state "$BUCKET" || true
+          else
+            echo "S3 bucket $BUCKET does not exist — will be created."
+          fi
+
+          # Import DynamoDB table if it already exists in AWS
+          if aws dynamodb describe-table --table-name terraform-locks --region "$REGION" 2>/dev/null; then
+            echo "DynamoDB table terraform-locks already exists — importing into Terraform state."
+            terraform import \
+              -var="aws_region=$REGION" \
+              -var="terraform_bucket=$BUCKET" \
+              aws_dynamodb_table.terraform_locks terraform-locks || true
+          else
+            echo "DynamoDB table terraform-locks does not exist — will be created."
+          fi
+        working-directory: terraform/bootstrap
+
       - name: Terraform Plan
         run: |
           terraform plan \
