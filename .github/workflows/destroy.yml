@@ -204,12 +204,6 @@ jobs:
             "/aws/containerinsights/${CLUSTER}/host"
             "/aws/containerinsights/${CLUSTER}/performance"
           )
-            "/aws/eks/${CLUSTER}/cluster"
-            "/aws/containerinsights/${CLUSTER}/application"
-            "/aws/containerinsights/${CLUSTER}/dataplane"
-            "/aws/containerinsights/${CLUSTER}/host"
-            "/aws/containerinsights/${CLUSTER}/performance"
-          )
           for LG in "${EXTRA_LOG_GROUPS[@]}"; do
             aws logs delete-log-group \
               --log-group-name "$LG" \
