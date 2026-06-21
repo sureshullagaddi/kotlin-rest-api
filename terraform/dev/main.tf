@@ -1,3 +1,6 @@
+# Current AWS account — used to build IAM role ARNs
+data "aws_caller_identity" "current" {}
+
 # ---------------------------------------------------------------------------
 # DB Credentials — fully managed by Terraform
 #
@@ -51,12 +54,12 @@ module "vpc" {
   project_name        = var.project_name
   vpc_cidr            = var.vpc_cidr
   availability_zones  = var.availability_zones
+  single_nat_gateway  = true  # dev: 1 EIP/NAT saves costs and avoids EIP limits
 
   public_subnet_tags  = local.public_subnet_tags
   private_subnet_tags = local.private_subnet_tags
   vpc_tags            = local.vpc_tags
-
-  common_tags = local.common_tags
+  common_tags         = local.common_tags
 }
 
 # IAM Module
@@ -85,8 +88,9 @@ module "eks" {
   node_count      = var.eks_node_count
   node_type       = var.eks_node_type
 
-  eks_node_role_arn    = module.iam.eks_node_role_arn
-  eks_cluster_role_arn = module.iam.eks_cluster_role_arn
+  eks_node_role_arn      = module.iam.eks_node_role_arn
+  eks_cluster_role_arn   = module.iam.eks_cluster_role_arn
+  cluster_admin_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/github-actions-oidc-role"
 
   common_tags = local.common_tags
 }

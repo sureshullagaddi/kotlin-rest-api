@@ -40,6 +40,11 @@ variable "eks_cluster_role_arn" {
   type = string
 }
 
+variable "cluster_admin_role_arn" {
+  description = "IAM role ARN that gets EKS cluster-admin access (e.g. GitHub Actions OIDC role)"
+  type        = string
+}
+
 variable "common_tags" {
   type = map(string)
 }
@@ -119,6 +124,25 @@ resource "aws_eks_node_group" "main" {
   ]
 }
 
+
+# EKS Access Entry — grants GitHub Actions IAM role kubectl cluster-admin access
+resource "aws_eks_access_entry" "cluster_admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.cluster_admin_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "cluster_admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = var.cluster_admin_role_arn
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.cluster_admin]
+}
 
 # Outputs
 output "cluster_name" {
