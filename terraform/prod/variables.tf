@@ -14,7 +14,7 @@ variable "environment" {
 variable "project_name" {
   description = "Project name"
   type        = string
-  default     = "fusion-api"
+  default     = "product-service"
 }
 
 variable "vpc_cidr" {
