@@ -44,7 +44,7 @@ variable "eks_node_type" {
 variable "eks_kubernetes_version" {
   description = "Kubernetes version"
   type        = string
-  default     = "1.27"
+  default     = "1.32"
 }
 
 variable "rds_instance_class" {

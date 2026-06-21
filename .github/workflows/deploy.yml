@@ -125,7 +125,7 @@ jobs:
     name: Provision Infrastructure (Terraform)
     needs: [prepare, build]
     runs-on: ubuntu-latest
-    environment: ${{ needs.prepare.outputs.environment }}
+    environment: ${{ needs.prepare.outputs.environment }}  # ← triggers GitHub required-reviewer gate for prod
     
     steps:
       - name: Checkout Code
