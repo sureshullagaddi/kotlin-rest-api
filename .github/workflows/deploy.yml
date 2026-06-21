@@ -142,6 +142,49 @@ jobs:
         with:
           terraform_version: 1.5.0
 
+      - name: Release Orphaned EIPs
+        # Previous failed Terraform runs may leave unassociated EIPs behind.
+        # These block new allocations when the account EIP limit is reached.
+        run: |
+          echo "Checking for unassociated EIPs in ${{ env.AWS_REGION }}..."
+          ORPHANED=$(aws ec2 describe-addresses \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Addresses[?AssociationId==null].AllocationId' \
+            --output text)
+
+          if [ -z "$ORPHANED" ]; then
+            echo "No orphaned EIPs found."
+          else
+            for EIP in $ORPHANED; do
+              echo "Releasing orphaned EIP: $EIP"
+              aws ec2 release-address --allocation-id "$EIP" --region ${{ env.AWS_REGION }}
+            done
+            echo "Orphaned EIPs released."
+          fi
+
+      - name: Upgrade EKS Auth Mode (if cluster exists with CONFIG_MAP)
+        # Terraform can update authentication_mode in-place, but only if the cluster
+        # isn't already upgrading. Pre-upgrade via CLI to unblock access entries.
+        run: |
+          CLUSTER="product-service-eks-${{ needs.prepare.outputs.environment }}"
+          AUTH_MODE=$(aws eks describe-cluster \
+            --name "$CLUSTER" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'cluster.accessConfig.authenticationMode' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [[ "$AUTH_MODE" == "CONFIG_MAP" ]]; then
+            echo "Upgrading EKS auth mode from CONFIG_MAP to API_AND_CONFIG_MAP..."
+            aws eks update-cluster-config \
+              --name "$CLUSTER" \
+              --region ${{ env.AWS_REGION }} \
+              --access-config authenticationMode=API_AND_CONFIG_MAP
+            aws eks wait cluster-active --name "$CLUSTER" --region ${{ env.AWS_REGION }}
+            echo "Auth mode upgraded."
+          else
+            echo "EKS cluster auth mode is '$AUTH_MODE' — no upgrade needed."
+          fi
+
       - name: Terraform Init
         run: |
           cd terraform/${{ needs.prepare.outputs.environment }}

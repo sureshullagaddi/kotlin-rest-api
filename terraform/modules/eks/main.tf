@@ -76,6 +76,11 @@ resource "aws_eks_cluster" "main" {
   version  = var.kubernetes_version
   role_arn = var.eks_cluster_role_arn
 
+  # API_AND_CONFIG_MAP enables both EKS Access Entries (API) and aws-auth ConfigMap
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
   vpc_config {
     subnet_ids              = var.private_subnet_ids
     security_group_ids      = [aws_security_group.eks_cluster.id]
