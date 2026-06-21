@@ -162,16 +162,15 @@ jobs:
             echo "⚠️ Terraform backend missing — skipping Terraform destroy."
           fi
       - name: Terraform Init
+        if: steps.check_backend.outputs.backend_exists == 'true'
         run: |
-          if: steps.check_backend.outputs.backend_exists == 'true'
-          run: |
-              cd terraform/${{ github.event.inputs.environment }}
-              terraform init \
-              -backend-config=bucket=${{ env.TERRAFORM_BUCKET }} \
-              -backend-config=key=product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
-              -backend-config=region=${{ env.AWS_REGION }} \
-              -backend-config=encrypt=true \
-              -backend-config=dynamodb_table=terraform-locks
+          cd terraform/${{ github.event.inputs.environment }}
+          terraform init \
+          -backend-config=bucket=${{ env.TERRAFORM_BUCKET }} \
+          -backend-config=key=product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
+          -backend-config=region=${{ env.AWS_REGION }} \
+          -backend-config=encrypt=true \
+          -backend-config=dynamodb_table=terraform-locks
 
       - name: Terraform Plan Destroy
         run: |
