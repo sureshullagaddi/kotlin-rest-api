@@ -47,6 +47,12 @@ variable "common_tags" {
   type = map(string)
 }
 
+variable "engine_version" {
+  description = "PostgreSQL engine version — use major version only (e.g. '17') to let AWS pick the latest available minor"
+  type        = string
+  default     = "17"
+}
+
 # DB Subnet Group
 resource "aws_db_subnet_group" "main" {
   name       = "${var.identifier}-subnet-group"
@@ -92,11 +98,14 @@ resource "aws_security_group" "rds" {
 resource "aws_db_instance" "main" {
   identifier     = var.identifier
   engine         = "postgres"
-  engine_version = "16.4"
+  engine_version = var.engine_version
 
   instance_class       = var.instance_class
   allocated_storage    = var.allocated_storage
   storage_encrypted    = true
+
+  auto_minor_version_upgrade  = true
+  allow_major_version_upgrade = false
 
   db_name  = var.database_name
   username = var.username
