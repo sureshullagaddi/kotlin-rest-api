@@ -149,28 +149,16 @@ jobs:
           else
             echo "RDS instance $DB_IDENTIFIER not found — skipping."
           fi
-      - name: Check if Terraform backend exists
-        id: check_backend
-        run: |
-          if aws s3api head-bucket \
-              --bucket ${{ env.TERRAFORM_BUCKET }} \
-              --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "backend_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Terraform backend exists."
-          else
-            echo "backend_exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Terraform backend missing — skipping Terraform destroy."
-          fi
+
       - name: Terraform Init
-        if: steps.check_backend.outputs.backend_exists == 'true'
         run: |
           cd terraform/${{ github.event.inputs.environment }}
           terraform init \
-          -backend-config=bucket=${{ env.TERRAFORM_BUCKET }} \
-          -backend-config=key=product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
-          -backend-config=region=${{ env.AWS_REGION }} \
-          -backend-config=encrypt=true \
-          -backend-config=dynamodb_table=terraform-locks
+            -backend-config=bucket=${{ env.TERRAFORM_BUCKET }} \
+            -backend-config=key=product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
+            -backend-config=region=${{ env.AWS_REGION }} \
+            -backend-config=encrypt=true \
+            -backend-config=dynamodb_table=terraform-locks
 
       - name: Terraform Plan Destroy
         run: |
@@ -210,6 +198,12 @@ jobs:
           ENV="${{ github.event.inputs.environment }}"
           CLUSTER="product-service-eks-${ENV}"
           EXTRA_LOG_GROUPS=(
+            "/aws/eks/${CLUSTER}/cluster"
+            "/aws/containerinsights/${CLUSTER}/application"
+            "/aws/containerinsights/${CLUSTER}/dataplane"
+            "/aws/containerinsights/${CLUSTER}/host"
+            "/aws/containerinsights/${CLUSTER}/performance"
+          )
             "/aws/eks/${CLUSTER}/cluster"
             "/aws/containerinsights/${CLUSTER}/application"
             "/aws/containerinsights/${CLUSTER}/dataplane"
