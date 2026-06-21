@@ -6,7 +6,8 @@ locals {
       Environment = var.environment
       Project     = var.project_name
       ManagedBy   = "Terraform"
-      CreatedAt   = timestamp()
+      # CreatedAt removed — timestamp() changes between plan & apply,
+      # causing "inconsistent final plan" errors on all resources.
     },
     var.tags
   )
