@@ -1,14 +1,12 @@
 # Development Environment Overrides
-# Used for testing and integration scenarios
 
-replicaCount: 1  # Single replica for dev
+replicaCount: 1
 
 image:
-  tag: "dev-latest"
   pullPolicy: Always
 
 autoscaling:
-  enabled: false  # No auto-scaling in dev
+  enabled: false
 
 resources:
   requests:
@@ -23,25 +21,24 @@ config:
   apiLogLevel: DEBUG
 
 database:
-  host: postgres-dev.fusion-namespace.svc.cluster.local
-  port: 5432
-  name: fusion_api_dev
+  name: fusion_api
+
+env:
+  SPRING_PROFILES_ACTIVE: dev
+  JAVA_OPTS: "-XX:+UseG1GC -Xms128m -Xmx384m"
 
 ingress:
-  enabled: true
-  hosts:
-    - host: api-dev.example.com
-      paths:
-        - path: /
-          pathType: Prefix
+  enabled: false
 
 livenessProbe:
-  initialDelaySeconds: 30
+  initialDelaySeconds: 60
   periodSeconds: 15
+  failureThreshold: 5
 
 readinessProbe:
-  initialDelaySeconds: 15
+  initialDelaySeconds: 30
   periodSeconds: 10
+  failureThreshold: 5
 
 podDisruptionBudget:
   enabled: false
@@ -49,4 +46,3 @@ podDisruptionBudget:
 nodeSelector: {}
 
 affinity: {}
-

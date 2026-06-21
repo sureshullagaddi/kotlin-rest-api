@@ -18,6 +18,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        rollme: {{ .Values.deployment.timestamp | default "0" | quote }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -46,8 +47,6 @@ spec:
           containerPort: {{ .Values.config.managementPort }}
           protocol: TCP
         env:
-        - name: SPRING_PROFILES_ACTIVE
-          value: "{{ .Values.env.SPRING_PROFILES_ACTIVE | default "prod" }}"
         - name: SERVER_PORT
           value: "{{ .Values.config.serverPort }}"
         - name: MANAGEMENT_SERVER_PORT
@@ -73,10 +72,6 @@ spec:
         - name: {{ $key }}
           value: {{ $value | quote }}
         {{- end }}
-        {{- end }}
-        {{- if .Values.cloudwatch }}
-        - name: AWS_REGION
-          value: "{{ .Values.cloudwatch.logGroup | split "/" | first | default "us-east-1" }}"
         {{- end }}
         livenessProbe:
           {{- toYaml .Values.livenessProbe | nindent 12 }}

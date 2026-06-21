@@ -258,12 +258,20 @@ jobs:
 
       - name: Deploy with Helm
         run: |
+          # Fetch RDS host from Secrets Manager (stored there by Terraform)
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "product-service/${{ needs.prepare.outputs.environment }}/db-credentials" \
+            --region ${{ env.AWS_REGION }} \
+            --query SecretString --output text)
+          DB_HOST=$(echo "$SECRET" | jq -r .host)
+
           helm upgrade --install product-service \
             ./helm/api-chart \
             --namespace product-service \
             --values ./helm/api-chart/values.yaml \
             --values ./helm/api-chart/values-${{ needs.prepare.outputs.environment }}.yaml \
             --set image.tag=${{ needs.prepare.outputs.version }} \
+            --set database.host="$DB_HOST" \
             --set deployment.timestamp="$(date +%s)" \
             --wait \
             --timeout 10m

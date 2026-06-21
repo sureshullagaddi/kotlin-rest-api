@@ -1,32 +1,24 @@
 # Default Helm Chart Values
-# Used for both development and production
-# Individual environments override with values-{env}.yaml
 
-# Replica Configuration
 replicaCount: 2
 
-# Docker Image Configuration
 image:
-  repository: nexus.example.com/fusion-api/kotlin-rest-api
+  repository: 397979615352.dkr.ecr.eu-north-1.amazonaws.com/product-service/kotlin-rest-api
   pullPolicy: IfNotPresent
   tag: "latest"
 
-# Image Pull Secrets (for private registries)
 imagePullSecrets: []
 
-# Service Account
 serviceAccount:
   create: true
   annotations: {}
   name: ""
 
-# Pod Annotations
 podAnnotations:
   prometheus.io/scrape: "true"
-  prometheus.io/port: "9090"
+  prometheus.io/port: "8080"
   prometheus.io/path: "/actuator/prometheus"
 
-# Pod Security Context
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
@@ -35,44 +27,35 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
-# Container Security Context
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
+  readOnlyRootFilesystem: false   # Spring Boot needs tmp writes
   capabilities:
     drop:
       - ALL
 
-# Service Configuration
 service:
   type: ClusterIP
   port: 80
   targetPort: 8080
-  name: fusion-api
+  name: product-service
   annotations: {}
 
-# Ingress Configuration
 ingress:
-  enabled: true
+  enabled: false   # Enable once ALB controller is installed
   className: alb
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID
-    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
   hosts:
-    - host: api.example.com
+    - host: api.productservice.com
       paths:
         - path: /
           pathType: Prefix
-  tls:
-    - secretName: fusion-api-tls
-      hosts:
-        - api.example.com
+  tls: []
 
-# Resource Requests and Limits
 resources:
   requests:
     cpu: 250m
@@ -81,7 +64,6 @@ resources:
     cpu: 500m
     memory: 1Gi
 
-# Horizontal Pod Autoscaler
 autoscaling:
   enabled: true
   minReplicas: 2
@@ -89,10 +71,8 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
-# Node Affinity
 nodeSelector: {}
 
-# Pod Affinity
 affinity:
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
@@ -103,18 +83,16 @@ affinity:
               - key: app
                 operator: In
                 values:
-                  - fusion-api
+                  - product-service
           topologyKey: kubernetes.io/hostname
 
-# Node Tolerations
 tolerations: []
 
-# Livenessandiness Probes
 livenessProbe:
   httpGet:
     path: /actuator/health/liveness
     port: 8080
-  initialDelaySeconds: 40
+  initialDelaySeconds: 60
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
@@ -123,45 +101,39 @@ readinessProbe:
   httpGet:
     path: /actuator/health/readiness
     port: 8080
-  initialDelaySeconds: 20
+  initialDelaySeconds: 30
   periodSeconds: 5
   timeoutSeconds: 3
-  failureThreshold: 2
+  failureThreshold: 3
 
-# Configuration
 config:
   serverPort: 8080
-  managementPort: 9090
+  managementPort: 8080
   logLevel: INFO
   apiLogLevel: DEBUG
 
-# Database Configuration
 database:
-  host: postgres.fusion-namespace.svc.cluster.local
+  host: "localhost"          # Overridden at deploy time via --set database.host
   port: 5432
   name: fusion_api
-  # Username and password should come from Kubernetes Secrets
-  secretName: fusion-db-credentials
+  secretName: product-db-credentials
   secretUserKey: username
   secretPasswordKey: password
 
-# Environment Variables
 env:
   SPRING_PROFILES_ACTIVE: prod
-  JAVA_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms512m -Xmx1g"
+  JAVA_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms256m -Xmx768m"
 
-# ConfigMap Data
 configMap:
   application.yml: |
     spring:
       application:
-        name: fusion-api
+        name: product-service
       jpa:
         show-sql: false
         hibernate:
           ddl-auto: validate
 
-# Volumes and Mounts
 persistence:
   enabled: false
   storageClass: gp3
@@ -169,33 +141,29 @@ persistence:
   size: 10Gi
   mountPath: /var/log/product-service
 
-# Rolling Update Strategy
 strategy:
   type: RollingUpdate
   rollingUpdate:
     maxSurge: 1
     maxUnavailable: 0
 
-# Pod Disruption Budget
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
-# Network Policies
 networkPolicy:
-  enabled: true
-  policyTypes:
-    - Ingress
-    - Egress
+  enabled: false   # Enable once network policies are validated
 
-# Service Monitor for Prometheus (optional)
 serviceMonitor:
   enabled: false
   interval: 30s
   scrapeTimeout: 10s
 
-# RBAC
 rbac:
   create: true
   rules: []
+
+# Set by CI pipeline to force a rolling restart on every deploy
+deployment:
+  timestamp: "0"
 
