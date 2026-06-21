@@ -36,6 +36,10 @@ variable "eks_node_role_arn" {
   type = string
 }
 
+variable "eks_cluster_role_arn" {
+  type = string
+}
+
 variable "common_tags" {
   type = map(string)
 }
@@ -63,13 +67,13 @@ resource "aws_security_group" "eks_cluster" {
 
 # EKS Cluster
 resource "aws_eks_cluster" "main" {
-  name            = var.cluster_name
-  version         = var.kubernetes_version
-  role_arn        = "arn:aws:iam::$${data.aws_caller_identity.current.account_id}:role/${var.cluster_name}-cluster-role"
+  name     = var.cluster_name
+  version  = var.kubernetes_version
+  role_arn = var.eks_cluster_role_arn
 
   vpc_config {
     subnet_ids              = var.private_subnet_ids
-        security_group_ids      = [aws_security_group.eks_cluster.id]
+    security_group_ids      = [aws_security_group.eks_cluster.id]
     endpoint_private_access = true
     endpoint_public_access  = true
   }
@@ -115,8 +119,6 @@ resource "aws_eks_node_group" "main" {
   ]
 }
 
-# Data source for current AWS account
-data "aws_caller_identity" "current" {}
 
 # Outputs
 output "cluster_name" {

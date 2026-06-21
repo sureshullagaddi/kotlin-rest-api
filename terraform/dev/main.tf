@@ -85,7 +85,8 @@ module "eks" {
   node_count      = var.eks_node_count
   node_type       = var.eks_node_type
 
-  eks_node_role_arn = module.iam.eks_node_role_arn
+  eks_node_role_arn    = module.iam.eks_node_role_arn
+  eks_cluster_role_arn = module.iam.eks_cluster_role_arn
 
   common_tags = local.common_tags
 }
