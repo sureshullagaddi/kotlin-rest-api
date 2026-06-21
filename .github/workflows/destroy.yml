@@ -130,7 +130,7 @@ jobs:
         # deletion_protection=true on prod RDS blocks terraform destroy — must be cleared first
         run: |
           ENV="${{ github.event.inputs.environment }}"
-          DB_IDENTIFIER="fusion-api-db-${ENV}"
+          DB_IDENTIFIER="product-service-db-${ENV}"
 
           if aws rds describe-db-instances \
               --db-instance-identifier "$DB_IDENTIFIER" \
@@ -178,7 +178,7 @@ jobs:
         # Prod RDS creates a final snapshot on deletion — Terraform doesn't delete it
         run: |
           ENV="${{ github.event.inputs.environment }}"
-          SNAPSHOT_ID="fusion-api-db-${ENV}-final-snapshot"
+          SNAPSHOT_ID="product-service-db-${ENV}-final-snapshot"
 
           if aws rds describe-db-snapshots \
               --db-snapshot-identifier "$SNAPSHOT_ID" \
@@ -196,8 +196,14 @@ jobs:
         # EKS creates /aws/eks/<cluster>/cluster log group automatically — not in Terraform state
         run: |
           ENV="${{ github.event.inputs.environment }}"
-          CLUSTER="fusion-api-eks-${ENV}"
+          CLUSTER="product-service-eks-${ENV}"
           EXTRA_LOG_GROUPS=(
+            "/aws/eks/${CLUSTER}/cluster"
+            "/aws/containerinsights/${CLUSTER}/application"
+            "/aws/containerinsights/${CLUSTER}/dataplane"
+            "/aws/containerinsights/${CLUSTER}/host"
+            "/aws/containerinsights/${CLUSTER}/performance"
+          )
             "/aws/eks/${CLUSTER}/cluster"
             "/aws/containerinsights/${CLUSTER}/application"
             "/aws/containerinsights/${CLUSTER}/dataplane"
@@ -285,8 +291,8 @@ jobs:
           ENV="${{ github.event.inputs.environment }}"
           LOG_GROUPS=(
             "/aws/eks/product-service-eks-${ENV}/cluster"
-            "/aws/eks/product-service-${ENV}"
-            "/aws/rds/instance/product-service-${ENV}"
+            "/aws/eks/product-service-eks-${ENV}"
+            "/aws/rds/instance/product-service-db-${ENV}"
           )
           for LG in "${LOG_GROUPS[@]}"; do
             if aws logs describe-log-groups \
