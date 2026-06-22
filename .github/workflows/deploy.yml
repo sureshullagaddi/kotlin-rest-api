@@ -263,10 +263,9 @@ jobs:
             --secret-id "product-service/${{ needs.prepare.outputs.environment }}/db-credentials" \
             --region ${{ env.AWS_REGION }} \
             --query SecretString --output text)
-          DB_HOST=$(echo "$SECRET" | jq -r .host)
-          DB_HOST1=$(echo "$SECRET" | jq -r .host | cut -d':' -f1)
+          DB_HOST=$(echo "$SECRET" | jq -r .host | cut -d':' -f1)
           DB_PORT=$(echo "$SECRET" | jq -r .port)
-          echo "DB HOST ---'$DB_HOST' and DB PORT-----'$DB_PORT'  and DB HOST1-----'$DB_HOST1' "
+          echo "DB HOST ---'$DB_HOST' and DB PORT-----'$DB_PORT' "
           helm upgrade --install product-service \
             ./helm/api-chart \
             --namespace product-service \
