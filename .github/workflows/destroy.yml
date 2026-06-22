@@ -197,52 +197,113 @@ jobs:
             s3://${{ env.TERRAFORM_BUCKET }}/product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
             --region ${{ env.AWS_REGION }} || echo "State file already removed."
 
-      # ✅ ONLY ADDED STEP
-      - name: Force cleanup of VPC networking resources
+  cleanup-ecr:
+    name: 3 — Delete ECR Images & Repository
+    needs: terraform-destroy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete all images from ECR repository
+        run: |
+          IMAGE_IDS=$(aws ecr list-images \
+            --repository-name ${{ env.IMAGE_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageIds[*]' \
+            --output json 2>/dev/null || echo "[]")
+
+          if [[ "$IMAGE_IDS" == "[]" || -z "$IMAGE_IDS" ]]; then
+            echo "No images found in ECR — skipping batch delete."
+          else
+            aws ecr batch-delete-image \
+              --repository-name ${{ env.IMAGE_NAME }} \
+              --region ${{ env.AWS_REGION }} \
+              --image-ids "$IMAGE_IDS"
+            echo "All ECR images deleted."
+          fi
+
+      - name: Delete ECR repository
+        run: |
+          if aws ecr describe-repositories \
+              --repository-names ${{ env.IMAGE_NAME }} \
+              --region ${{ env.AWS_REGION }} &>/dev/null; then
+            aws ecr delete-repository \
+              --repository-name ${{ env.IMAGE_NAME }} \
+              --region ${{ env.AWS_REGION }} \
+              --force
+            echo "ECR repository deleted."
+          else
+            echo "ECR repository not found — skipping."
+          fi
+
+  cleanup-logs:
+    name: 4 — Delete CloudWatch Log Groups
+    needs: terraform-destroy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete CloudWatch Log Groups
         run: |
           ENV="${{ github.event.inputs.environment }}"
-          REGION="${{ env.AWS_REGION }}"
-
-          VPC_ID=$(aws ec2 describe-vpcs \
-            --region $REGION \
-            --filters "Name=tag:Environment,Values=$ENV" \
-            --query 'Vpcs[0].VpcId' \
-            --output text 2>/dev/null)
-
-          if [[ -z "$VPC_ID" || "$VPC_ID" == "None" ]]; then
-            echo "No VPC found — skipping."
-            exit 0
-          fi
-
-          echo "Cleaning VPC: $VPC_ID"
-
-          for NAT in $(aws ec2 describe-nat-gateways \
-            --region $REGION \
-            --filter Name=vpc-id,Values=$VPC_ID \
-            --query 'NatGateways[].NatGatewayId' \
-            --output text); do
-            aws ec2 delete-nat-gateway --nat-gateway-id $NAT --region $REGION
+          LOG_GROUPS=(
+            "/aws/eks/product-service-eks-${ENV}/cluster"
+            "/aws/eks/product-service-eks-${ENV}"
+            "/aws/rds/instance/product-service-db-${ENV}"
+          )
+          for LG in "${LOG_GROUPS[@]}"; do
+            if aws logs describe-log-groups \
+                --log-group-name-prefix "$LG" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'logGroups[0].logGroupName' \
+                --output text 2>/dev/null | grep -q "$LG"; then
+              aws logs delete-log-group \
+                --log-group-name "$LG" \
+                --region ${{ env.AWS_REGION }}
+              echo "Deleted log group: $LG"
+            else
+              echo "Log group not found: $LG — skipping."
+            fi
           done
 
-          sleep 60
+  notify:
+    name: Destruction Summary
+    needs: [helm-uninstall, terraform-destroy, cleanup-ecr, cleanup-logs]
+    runs-on: ubuntu-latest
+    if: always()
 
-          for SUB in $(aws ec2 describe-subnets \
-            --region $REGION \
-            --filters Name=vpc-id,Values=$VPC_ID \
-            --query 'Subnets[].SubnetId' \
-            --output text); do
-            aws ec2 delete-subnet --subnet-id $SUB --region $REGION || true
-          done
-
-          IGW=$(aws ec2 describe-internet-gateways \
-            --region $REGION \
-            --filters Name=attachment.vpc-id,Values=$VPC_ID \
-            --query 'InternetGateways[0].InternetGatewayId' \
-            --output text)
-
-          if [[ "$IGW" != "None" && -n "$IGW" ]]; then
-            aws ec2 detach-internet-gateway --internet-gateway-id $IGW --vpc-id $VPC_ID --region $REGION || true
-            aws ec2 delete-internet-gateway --internet-gateway-id $IGW --region $REGION || true
+    steps:
+      - name: Write Summary
+        run: |
+          echo "## 🗑️ Destruction Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ github.event.inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bootstrap destroyed | \`${{ github.event.inputs.destroy_bootstrap }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Timestamp | $(date -u +'%Y-%m-%dT%H:%M:%SZ') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Step Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1 — Helm / Kubernetes | ${{ needs.helm-uninstall.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2 — Terraform Infra | ${{ needs.terraform-destroy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3 — ECR Images & Repo | ${{ needs.cleanup-ecr.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4 — CloudWatch Logs | ${{ needs.cleanup-logs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.terraform-destroy.result }}" == "success" ]]; then
+            echo "✅ **Infrastructure successfully destroyed.**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Some steps failed — verify manually in the AWS Console.**" >> $GITHUB_STEP_SUMMARY
           fi
-
-          aws ec2 delete-vpc --vpc-id $VPC_ID --region $REGION || true
