@@ -60,7 +60,7 @@ module "vpc" {
   vpc_tags            = local.vpc_tags
   common_tags         = local.common_tags
 }
-}
+
 
 # IAM Module
 module "iam" {
