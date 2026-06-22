@@ -264,7 +264,7 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --query SecretString --output text)
           DB_HOST=$(echo "$SECRET" | jq -r .host)
-
+          echo "db host --------'$DB_HOST' "
           helm upgrade --install product-service \
             ./helm/api-chart \
             --namespace product-service \
@@ -274,7 +274,7 @@ jobs:
             --set database.host="$DB_HOST" \
             --set deployment.timestamp="$(date +%s)" \
             --wait \
-            --timeout 10m
+            --timeout 5m
 
       - name: Verify Deployment
         run: |
