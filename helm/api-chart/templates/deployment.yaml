@@ -43,9 +43,6 @@ spec:
         - name: http
           containerPort: {{ .Values.config.serverPort }}
           protocol: TCP
-        - name: management
-          containerPort: {{ .Values.config.managementPort }}
-          protocol: TCP
         env:
         - name: SERVER_PORT
           value: "{{ .Values.config.serverPort }}"
