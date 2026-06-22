@@ -191,12 +191,6 @@ jobs:
               echo "Log group not found: $LG — skipping."
           done
 
-      - name: Remove Terraform State File from S3
-        run: |
-          aws s3 rm \
-            s3://${{ env.TERRAFORM_BUCKET }}/product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
-            --region ${{ env.AWS_REGION }} || echo "State file already removed."
-
   cleanup-ecr:
     name: 3 — Delete ECR Images & Repository
     needs: terraform-destroy
