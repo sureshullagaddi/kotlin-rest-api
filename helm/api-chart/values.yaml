@@ -108,7 +108,7 @@ readinessProbe:
 
 config:
   serverPort: 8080
-  managementPort: 8080
+  managementPort: 8081
   logLevel: INFO
   apiLogLevel: DEBUG
 
