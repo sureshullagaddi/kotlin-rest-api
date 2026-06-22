@@ -1,14 +1,5 @@
 name: Destroy Infrastructure & Resources
 
-# Tears down everything in the correct order:
-#   1. Helm release + Kubernetes resources
-#   2. Terraform environment (EKS, RDS, VPC, IAM, CloudWatch, etc.)
-#   3. ECR images + repository
-#   4. CloudWatch log groups
-#   5. Bootstrap backend (S3 + DynamoDB) — ONLY if destroy_bootstrap=true
-#
-# ⚠️  WARNING: This is irreversible. All data will be permanently deleted.
-
 on:
   workflow_dispatch:
     inputs:
@@ -40,9 +31,6 @@ env:
   IMAGE_NAME: product-service/kotlin-rest-api
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Guard — abort immediately if confirmation text is wrong
-  # ---------------------------------------------------------------------------
   confirmation:
     name: Confirm Destruction
     runs-on: ubuntu-latest
@@ -55,9 +43,6 @@ jobs:
           fi
           echo "✅ Destruction confirmed for '${{ github.event.inputs.environment }}' environment."
 
-  # ---------------------------------------------------------------------------
-  # Step 1 — Remove Helm release and Kubernetes namespace
-  # ---------------------------------------------------------------------------
   helm-uninstall:
     name: 1 — Uninstall Helm Release & Namespace
     needs: confirmation
@@ -102,9 +87,6 @@ jobs:
           kubectl delete namespace product-service \
             --ignore-not-found --wait=true --timeout=3m || true
 
-  # ---------------------------------------------------------------------------
-  # Step 2 — Terraform destroy (EKS, RDS, VPC, IAM, CloudWatch, etc.)
-  # ---------------------------------------------------------------------------
   terraform-destroy:
     name: 2 — Terraform Destroy Infrastructure
     needs: helm-uninstall
@@ -127,7 +109,6 @@ jobs:
           terraform_version: 1.5.0
 
       - name: Disable RDS Deletion Protection (prod only)
-        # deletion_protection=true on prod RDS blocks terraform destroy — must be cleared first
         run: |
           ENV="${{ github.event.inputs.environment }}"
           DB_IDENTIFIER="product-service-db-${ENV}"
@@ -175,7 +156,6 @@ jobs:
           terraform apply -lock-timeout=5m -auto-approve destroyplan
 
       - name: Delete RDS Final Snapshot (prod only)
-        # Prod RDS creates a final snapshot on deletion — Terraform doesn't delete it
         run: |
           ENV="${{ github.event.inputs.environment }}"
           SNAPSHOT_ID="product-service-db-${ENV}-final-snapshot"
@@ -193,17 +173,10 @@ jobs:
           fi
 
       - name: Delete EKS Auto-created CloudWatch Log Groups
-        # EKS creates /aws/eks/<cluster>/cluster log group automatically — not in Terraform state
         run: |
           ENV="${{ github.event.inputs.environment }}"
           CLUSTER="product-service-eks-${ENV}"
           EXTRA_LOG_GROUPS=(
-            "/aws/eks/${CLUSTER}/cluster"
-            "/aws/containerinsights/${CLUSTER}/application"
-            "/aws/containerinsights/${CLUSTER}/dataplane"
-            "/aws/containerinsights/${CLUSTER}/host"
-            "/aws/containerinsights/${CLUSTER}/performance"
-          )
             "/aws/eks/${CLUSTER}/cluster"
             "/aws/containerinsights/${CLUSTER}/application"
             "/aws/containerinsights/${CLUSTER}/dataplane"
@@ -224,9 +197,6 @@ jobs:
             s3://${{ env.TERRAFORM_BUCKET }}/product-service/${{ github.event.inputs.environment }}/terraform.tfstate \
             --region ${{ env.AWS_REGION }} || echo "State file already removed."
 
-  # ---------------------------------------------------------------------------
-  # Step 3 — Delete ECR images and the repository itself
-  # ---------------------------------------------------------------------------
   cleanup-ecr:
     name: 3 — Delete ECR Images & Repository
     needs: terraform-destroy
@@ -271,9 +241,6 @@ jobs:
             echo "ECR repository not found — skipping."
           fi
 
-  # ---------------------------------------------------------------------------
-  # Step 4 — Delete CloudWatch log groups
-  # ---------------------------------------------------------------------------
   cleanup-logs:
     name: 4 — Delete CloudWatch Log Groups
     needs: terraform-destroy
@@ -309,92 +276,9 @@ jobs:
             fi
           done
 
-  # ---------------------------------------------------------------------------
-  # Step 5 — Destroy bootstrap (S3 bucket + DynamoDB) — OPTIONAL
-  #           Only runs when destroy_bootstrap=true.
-  #           Must fully empty the versioned S3 bucket before deleting.
-  # ---------------------------------------------------------------------------
-  destroy-bootstrap:
-    name: 5 — Destroy Bootstrap Backend (S3 + DynamoDB)
-    needs: [cleanup-ecr, cleanup-logs]
-    runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.destroy_bootstrap == 'true' }}
-
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-oidc-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Empty S3 bucket — delete all versions and delete markers
-        run: |
-          BUCKET="${{ env.TERRAFORM_BUCKET }}"
-          REGION="${{ env.AWS_REGION }}"
-
-          echo "Emptying versioned S3 bucket: $BUCKET"
-
-          # Delete all object versions (paginated)
-          while true; do
-            VERSIONS=$(aws s3api list-object-versions \
-              --bucket "$BUCKET" --region "$REGION" \
-              --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
-              --output json 2>/dev/null)
-            COUNT=$(echo "$VERSIONS" | jq '.Objects | length')
-            if [[ "$COUNT" -gt 0 ]]; then
-              aws s3api delete-objects --bucket "$BUCKET" --region "$REGION" --delete "$VERSIONS"
-              echo "Deleted $COUNT version(s)."
-            else
-              break
-            fi
-          done
-
-          # Delete all delete markers (paginated)
-          while true; do
-            MARKERS=$(aws s3api list-object-versions \
-              --bucket "$BUCKET" --region "$REGION" \
-              --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
-              --output json 2>/dev/null)
-            COUNT=$(echo "$MARKERS" | jq '.Objects | length')
-            if [[ "$COUNT" -gt 0 ]]; then
-              aws s3api delete-objects --bucket "$BUCKET" --region "$REGION" --delete "$MARKERS"
-              echo "Deleted $COUNT delete marker(s)."
-            else
-              break
-            fi
-          done
-
-          echo "S3 bucket $BUCKET is now empty."
-
-      - name: Delete S3 bucket
-        run: |
-          aws s3api delete-bucket \
-            --bucket ${{ env.TERRAFORM_BUCKET }} \
-            --region ${{ env.AWS_REGION }}
-          echo "S3 bucket '${{ env.TERRAFORM_BUCKET }}' deleted."
-
-      - name: Delete DynamoDB lock table
-        run: |
-          if aws dynamodb describe-table \
-              --table-name terraform-locks \
-              --region ${{ env.AWS_REGION }} &>/dev/null; then
-            aws dynamodb delete-table \
-              --table-name terraform-locks \
-              --region ${{ env.AWS_REGION }}
-            aws dynamodb wait table-not-exists \
-              --table-name terraform-locks \
-              --region ${{ env.AWS_REGION }}
-            echo "DynamoDB table 'terraform-locks' deleted."
-          else
-            echo "DynamoDB table not found — skipping."
-          fi
-
-  # ---------------------------------------------------------------------------
-  # Final summary
-  # ---------------------------------------------------------------------------
   notify:
     name: Destruction Summary
-    needs: [helm-uninstall, terraform-destroy, cleanup-ecr, cleanup-logs, destroy-bootstrap]
+    needs: [helm-uninstall, terraform-destroy, cleanup-ecr, cleanup-logs]
     runs-on: ubuntu-latest
     if: always()
 
@@ -417,7 +301,6 @@ jobs:
           echo "| 2 — Terraform Infra | ${{ needs.terraform-destroy.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 3 — ECR Images & Repo | ${{ needs.cleanup-ecr.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 4 — CloudWatch Logs | ${{ needs.cleanup-logs.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 5 — Bootstrap Backend | ${{ needs.destroy-bootstrap.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.terraform-destroy.result }}" == "success" ]]; then
             echo "✅ **Infrastructure successfully destroyed.**" >> $GITHUB_STEP_SUMMARY
