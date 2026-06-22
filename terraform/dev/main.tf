@@ -95,6 +95,22 @@ module "eks" {
   common_tags = local.common_tags
 }
 
+resource "aws_eks_access_entry" "cluster_access" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::397979615352:root"
+}
+
+resource "aws_eks_access_policy_association" "cluster_admin" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_eks_access_entry.cluster_access.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
+
 # RDS Module
 module "rds" {
   source = "../modules/rds"
