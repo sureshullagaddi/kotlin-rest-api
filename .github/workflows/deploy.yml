@@ -256,6 +256,12 @@ jobs:
             -n product-service \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ needs.prepare.outputs.cluster_name }}
+
       - name: Deploy with Helm
         run: |
           # Fetch RDS host from Secrets Manager (stored there by Terraform)
@@ -276,7 +282,14 @@ jobs:
             --set database.port="$DB_PORT" \
             --set deployment.timestamp="$(date +%s)" \
             --wait \
-            --timeout 5m
+            --timeout 10m
+
+      - name: Debug Kubernetes
+        if: failure()
+        run: |
+          kubectl get pods -n product-service
+          kubectl describe pods -n product-service
+          kubectl logs -n product-service --all-containers=true --tail=-1
 
       - name: Verify Deployment
         run: |
